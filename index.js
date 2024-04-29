@@ -11,6 +11,10 @@ app.use(cors()); // Gunakan middleware cors
 
 const upload = multer({ dest: "uploads/" });
 
+app.get("/", function() {
+  alert("Hello Server")
+});
+
 let nextId = 1;
 
 // Endpoint untuk mengunggah foto
