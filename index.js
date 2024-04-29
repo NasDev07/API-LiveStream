@@ -11,8 +11,8 @@ app.use(cors()); // Gunakan middleware cors
 
 const upload = multer({ dest: "uploads/" });
 
-app.get("/", function() {
-  alert("Hello Server")
+app.get('/', function(req, res) {
+  res.send('<h1>Hello World</h1>');
 });
 
 let nextId = 1;
