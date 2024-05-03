@@ -21,173 +21,62 @@ let nextId = 1;
 app.post("/photo", upload.single("photo"), (req, res, next) => {
   try {
     const file = req.file;
-    if (!file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
+    const id = nextId++; // Menggunakan ID berikutnya dan meningkatkan nilai nextId untuk penggunaan berikutnya
 
-    // Gunakan ID terakhir yang digunakan atau 1 jika belum ada yang diunggah
-    const id = nextId > 1 ? nextId : fs.readdirSync("uploads").length + 1;
-    nextId = id + 1; // Update nextId untuk ID berikutnya
-
-    const filename = `${id}_${file.originalname}`;
-
-    // Simpan file di direktori uploads
-    fs.renameSync(file.path, `uploads/${filename}`);
+    fs.renameSync(file.path, `uploads/${id}_${file.originalname}`);
 
     const uploadedFile = {
       id: id,
-      filename: filename,
-      size: file.size,
+      fieldname: file.fieldname,
+      originalname: file.originalname,
+      encoding: file.encoding,
       mimetype: file.mimetype,
+      destination: file.destination,
+      filename: `${id}_${file.originalname}`,
+      path: file.path,
+      size: file.size,
     };
 
-    // Kirim respons dengan data file yang diunggah
     res.status(200).json(uploadedFile);
   } catch (err) {
-    console.error("Error uploading photo:", err);
-    res.status(500).json({ error: "Internal server error" });
+    next(err);
   }
 });
 
-// Endpoint untuk mengirim data foto sebagai SSE ALL
+// Mengonfigurasi Express untuk melayani file statis dari direktori 'uploads'
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// Endpoint untuk mengambil semua foto
 app.get("/photos", (req, res, next) => {
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "Access-Control-Allow-Origin": "http://localhost:5173", // Izinkan akses dari aplikasi React
-  });
+  try {
+    fs.readdir("uploads", (err, files) => {
+      if (err) {
+        return next(err);
+      }
 
-  // Mengonfigurasi Express untuk melayani file statis dari direktori 'uploads'
-  app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+      files.sort((a, b) => {
+        return (
+          fs.statSync(`uploads/${b}`).mtime.getTime() -
+          fs.statSync(`uploads/${a}`).mtime.getTime()
+        );
+      });
 
-  const intervalId = setInterval(() => {
-    try {
-      const files = fs.readdirSync("uploads");
-      let photoData = files.map((file) => {
+      const photoData = files.map((file) => {
         const stats = fs.statSync(`uploads/${file}`);
         return {
           id: file.split("_")[0],
+          // Menggunakan URL lengkap dari server untuk mengakses gambar
           filename: `http://localhost:3000/uploads/${file}`,
           size: stats.size,
           lastModified: stats.mtime,
         };
       });
 
-      // Urutkan photoData berdasarkan lastModified secara descending
-      photoData.sort((a, b) => b.lastModified - a.lastModified);
-
-      res.write(`data: ${JSON.stringify({ photos: photoData })}\n\n`);
-    } catch (err) {
-      console.error("Error sending photo data:", err);
-      clearInterval(intervalId);
-      res.end();
-    }
-  }); // jika anda meu gunakan delai kirim data bisa di ini contohnya 1000 itu 1 detik
-
-  req.on("close", () => {
-    clearInterval(intervalId);
-    res.end();
-  });
-});
-
-// Endpoint untuk mengirim data foto sebagai SSE ID Ter-ahkir
-app.get("/photos-single", (req, res, next) => {
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "Access-Control-Allow-Origin": "http://localhost:5173", // Izinkan akses dari aplikasi React
-  });
-
-  app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-  const watcher = chokidar.watch("uploads", {
-    ignoreInitial: true, // Jangan kirim perubahan saat aplikasi pertama kali dijalankan
-    persistent: true,
-  });
-
-  // Fungsi untuk mengirimkan data foto terbaru ke klien
-  const sendLatestPhoto = () => {
-    try {
-      const files = fs.readdirSync("uploads");
-      let latestFile = files[files.length - 1]; // Ambil file dengan ID terakhir
-
-      const stats = fs.statSync(`uploads/${latestFile}`);
-      let photoData = {
-        id: latestFile.split("_")[0],
-        filename: `http://localhost:3000/uploads/${latestFile}`,
-        size: stats.size,
-        lastModified: stats.mtime,
-      };
-
-      res.write(`data: ${JSON.stringify({ photo: photoData })}\n\n`);
-    } catch (err) {
-      console.error("Error sending photo data:", err);
-      res.end();
-    }
-  };
-
-  sendLatestPhoto();
-  watcher.on("all", sendLatestPhoto);
-
-  // Tangani penutupan koneksi dari klien
-  req.on("close", () => {
-    watcher.close();
-    res.end();
-  });
-});
-
-// Endpoint untuk mengirim data foto sebagai SSE Ter-ahkir
-app.get("/photos-single", (req, res, next) => {
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "Access-Control-Allow-Origin": "http://localhost:5173", // Izinkan akses dari aplikasi React
-  });
-
-  // Mengonfigurasi Express untuk melayani file statis dari direktori 'uploads'
-  app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-  // Gunakan chokidar untuk memantau perubahan pada direktori 'uploads'
-  const watcher = chokidar.watch("uploads", {
-    ignoreInitial: true, // Jangan kirim perubahan saat aplikasi pertama kali dijalankan
-    persistent: true,
-  });
-
-  // Fungsi untuk mengirimkan data foto terbaru ke klien
-  const sendLatestPhoto = () => {
-    try {
-      const files = fs.readdirSync("uploads");
-      let latestFile = files[files.length - 1]; // Ambil file dengan ID terakhir
-
-      const stats = fs.statSync(`uploads/${latestFile}`);
-      let photoData = {
-        id: latestFile.split("_")[0],
-        filename: `http://localhost:3000/uploads/${latestFile}`,
-        size: stats.size,
-        lastModified: stats.mtime,
-      };
-
-      res.write(`data: ${JSON.stringify({ photo: photoData })}\n\n`);
-    } catch (err) {
-      console.error("Error sending photo data:", err);
-      res.end();
-    }
-  };
-
-  // Panggil sendLatestPhoto saat aplikasi pertama kali dijalankan
-  sendLatestPhoto();
-
-  // Panggil sendLatestPhoto saat ada perubahan dalam direktori 'uploads'
-  watcher.on("all", sendLatestPhoto);
-
-  // Tangani penutupan koneksi dari klien
-  req.on("close", () => {
-    watcher.close();
-    res.end();
-  });
+      res.json({ photos: photoData });
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 app.listen(3000, () => {
